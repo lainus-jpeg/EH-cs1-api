@@ -4,9 +4,9 @@ FROM node:18-alpine AS dependencies
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+COPY package.json ./
 
-RUN npm ci --only=production
+RUN npm install --omit=dev
 
 # Stage 2: Runtime
 FROM node:18-alpine

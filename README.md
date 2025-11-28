@@ -1,93 +1,165 @@
-# fonteyn-backend
+# Fonteyn Holiday Park - Backend API
 
+Standalone Node.js/Express backend server for the Fonteyn Holiday Park website with automated Docker deployment via GitLab CI/CD.
 
+## Quick Start
 
-## Getting started
+### Local Development
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+1. **Install dependencies:**
+   ```bash
+   cd backend
+   npm install
+   ```
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+2. **Run the backend:**
+   ```bash
+   npm start
+   ```
 
-## Add your files
+   Or for development with auto-reload:
+   ```bash
+   npm run dev
+   ```
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+The backend will start on `http://localhost:3000`
 
+### Docker - Local Testing
+
+1. **Build and run with docker-compose:**
+   ```bash
+   docker-compose up --build
+   ```
+
+2. **Or build and run manually:**
+   ```bash
+   docker build -f backend/Dockerfile -t fonteyn-backend .
+   docker run -p 3000:3000 \
+     -e DB_SERVER=case3sem2.database.windows.net \
+     -e DB_USER=FonteynDB \
+     -e DB_PASSWORD=Fonteyn123 \
+     -e DB_NAME=fonteyndb \
+     -e EMAIL_USER=your-email@gmail.com \
+     -e EMAIL_PASS=your-app-password \
+     fonteyn-backend
+   ```
+
+## Environment Variables
+
+All environment variables are defined in `backend/.env`:
+- `DB_USER` - Azure SQL database user
+- `DB_PASSWORD` - Azure SQL database password
+- `DB_SERVER` - Azure SQL server URL
+- `DB_NAME` - Database name
+- `PORT` - Server port (default: 3000)
+- `EMAIL_USER` - Gmail account for sending newsletters
+- `EMAIL_PASS` - Gmail app password
+- `WEBHOOK_URL` - Discord webhook for notifications
+
+## CI/CD Pipeline (GitLab)
+
+The `.gitlab-ci.yml` automatically:
+
+1. **Builds** the Docker image for the backend
+2. **Pushes** to GitLab Container Registry with tags:
+   - `$CI_COMMIT_SHORT_SHA` (specific commit)
+   - `latest` (most recent build)
+3. **Deploys** on `main` and `master` branches
+
+### Required GitLab CI/CD Variables
+
+Set these in GitLab Settings > CI/CD > Variables:
+
+- `CI_REGISTRY_USER` - GitLab username
+- `CI_REGISTRY_PASSWORD` - GitLab personal access token
+- `DB_SERVER` - Azure SQL server
+- `DB_USER` - Azure SQL user
+- `DB_PASSWORD` - Azure SQL password
+- `DB_NAME` - Database name
+- `EMAIL_USER` - Gmail address
+- `EMAIL_PASS` - Gmail app password
+- `WEBHOOK_URL` - Discord webhook
+
+### View Pipeline
+
+1. Go to GitLab repository
+2. Navigate to **CI/CD > Pipelines**
+3. Click on the pipeline to see:
+   - `build:backend` - Docker image build
+   - `build:frontend` - Frontend build
+   - `deploy:frontend` - Azure deployment
+   - `deploy:backend` - Docker push confirmation
+
+### Pull and Run Docker Image
+
+Once pushed to registry:
+
+```bash
+docker pull registry.gitlab.com/your-group/your-project/backend:latest
+docker run -p 3000:3000 \
+  -e DB_SERVER=$DB_SERVER \
+  -e DB_USER=$DB_USER \
+  -e DB_PASSWORD=$DB_PASSWORD \
+  -e DB_NAME=$DB_NAME \
+  registry.gitlab.com/your-group/your-project/backend:latest
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/Lainus/fonteyn-backend.git
-git branch -M main
-git push -uf origin main
+
+## API Endpoints
+
+### Authentication
+- `POST /v1/auth/register` - Register new user
+- `POST /v1/auth/login` - User login
+- `POST /v1/auth/verify-admin` - Verify admin status (Entra ID)
+
+### Health Check
+- `GET /v1/health` - API health check
+
+### Newsletter
+- `POST /v1/newsletter-signup` - Subscribe to newsletter
+- `GET /v1/newsletter-emails` - Get all subscriber emails
+- `POST /v1/send-newsletter` - Send newsletter to subscribers
+
+## WebSocket Events
+
+### Client Events
+- `connection` - When a client connects
+- `disconnect` - When a client disconnects
+
+### Server Events
+- `newsletter-signup` - Emitted when new user subscribes
+
+## Database Tables
+
+- `Users` - Registered users (Id, Name, Email, Phone, Password)
+- `NewsletterEmails` - Newsletter subscribers (Id, Email, CreatedAt)
+
+Tables are automatically created on first server startup.
+
+## Health Check
+
+The Docker image includes a health check that verifies the API is responding:
+
+```bash
+curl http://localhost:3000/v1/health
 ```
 
-## Integrate with your tools
+Response:
+```json
+{ "status": "OK" }
+```
 
-- [ ] [Set up project integrations](https://gitlab.com/Lainus/fonteyn-backend/-/settings/integrations)
+## Troubleshooting
 
-## Collaborate with your team
+### Docker build fails
+- Ensure `backend/package.json` exists
+- Check Node.js version compatibility (using Node 18)
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+### Container won't start
+- Check environment variables are set
+- Verify Azure SQL database is accessible
+- View logs: `docker logs <container-id>`
 
-## Test and Deploy
+### CORS errors
+- Backend is configured for `http://localhost:5173` (frontend)
+- Update CORS origin in `backend/app.js` if needed
 
-Use the built-in continuous integration in GitLab.
-
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.

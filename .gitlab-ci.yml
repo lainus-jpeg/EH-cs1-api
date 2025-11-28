@@ -18,7 +18,7 @@ build_backend:
   stage: build
   script:
     - echo "Image will be: $ACR_LOGIN_SERVER/$ACR_REPOSITORY:$IMAGE_TAG"
-    - docker build -f FONTEYN-BACKEND/Dockerfile -t "$ACR_LOGIN_SERVER/$ACR_REPOSITORY:$IMAGE_TAG" -t "$ACR_LOGIN_SERVER/$ACR_REPOSITORY:latest" FONTEYN-BACKEND
+    - docker build -f Dockerfile -t "$ACR_LOGIN_SERVER/$ACR_REPOSITORY:$IMAGE_TAG" -t "$ACR_LOGIN_SERVER/$ACR_REPOSITORY:latest" .
     - docker push "$ACR_LOGIN_SERVER/$ACR_REPOSITORY:$IMAGE_TAG"
     - docker push "$ACR_LOGIN_SERVER/$ACR_REPOSITORY:latest"
   only:

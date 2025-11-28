@@ -32,6 +32,7 @@ io.on('connection', (socket) => {
 // Middleware
 app.use(cors({
   origin: [
+    'http://localhost:5173',
     'https://wonderful-mushroom-0ea303e03-preview.westeurope.3.azurestaticapps.net',
     'https://wonderful-mushroom-0ea303e03.3.azurestaticapps.net',
     'https://fonteynbackend.delightfulsea-663eb54f.spaincentral.azurecontainerapps.io'

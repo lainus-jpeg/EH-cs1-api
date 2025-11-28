@@ -33,8 +33,8 @@ io.on('connection', (socket) => {
 app.use(cors({
   origin: [
     'http://localhost:5173',
-    'https://wonder-full-mushroom-0ea303e03-preview.westeurope3.azurestaticapps.net',
-    'https://wonder-full-mushroom-0ea303e03.3.azurestaticapps.net',
+    'https://wonderful-mushroom-0ea303e03-preview.westeurope.3.azurestaticapps.net/',
+    'https://wonderful-mushroom-0ea303e03.3.azurestaticapps.net',
     'https://fonteynbackend.delightfulsea-663eb54f.spaincentral.azurecontainerapps.io'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],

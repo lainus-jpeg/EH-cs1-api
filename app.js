@@ -14,7 +14,9 @@ const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
     origin: [
+      'http://localhost:5173',
       'https://wonderful-mushroom-0ea303e03-preview.westeurope3.azurestaticapps.net',
+      'https://wonderful-mushroom-0ea303e03.3.azurestaticapps.net',
       'https://fonteynbackend.wittypebble-be3e1c7a.spaincentral.azurecontainerapps.io'
     ],
     methods: ['GET', 'POST']
@@ -35,8 +37,12 @@ io.on('connection', (socket) => {
 // Middleware
 app.use(cors({
   origin: [
-    'https://wonderful-mushroom-0ea303e03-preview.westeurope3.azurestaticapps.net', // your frontend
-    'https://fonteynbackend.wittypebble-be3e1c7a.spaincentral.azurecontainerapps.io' // your new backend
+    'http://localhost:5173',
+    'https://wonderful-mushroom-0ea303e03-preview.westeurope.3.azurestaticapps.net',
+    'https://wonderful-mushroom-0ea303e03.3.azurestaticapps.net',
+    'https://fonteynbackend.wittypebble-be3e1c7a.spaincentral.azurecontainerapps.io'
+    'https://fonteynbackend.wittypebble-be3e1c7a.spaincentral.azurecontainerapps.io/v1'
+  
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],

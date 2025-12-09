@@ -41,8 +41,6 @@ app.use(cors({
     'https://wonderful-mushroom-0ea303e03-preview.westeurope.3.azurestaticapps.net',
     'https://wonderful-mushroom-0ea303e03.3.azurestaticapps.net',
     'https://fonteynbackend.wittypebble-be3e1c7a.spaincentral.azurecontainerapps.io'
-    'https://fonteynbackend.wittypebble-be3e1c7a.spaincentral.azurecontainerapps.io/v1'
-  
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],

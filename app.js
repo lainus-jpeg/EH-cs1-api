@@ -374,7 +374,7 @@ app.post('/v1/send-newsletter', async (req, res) => {
   }
 });
 
-// Start server
+// Start server!!
 server.listen(PORT, () => {
   console.log(`🚀 Backend server running on http://localhost:${PORT}`);
   console.log(`📡 WebSocket server ready for live updates`);

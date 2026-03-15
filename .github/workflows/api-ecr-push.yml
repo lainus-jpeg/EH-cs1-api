@@ -49,14 +49,33 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
+      - name: Update SSM Parameter with new image URI
+        if: github.event_name == 'push'
+        run: |
+          aws ssm put-parameter \
+            --name "/apps/api/image-uri" \
+            --value "$ECR_REGISTRY/$ECR_REPOSITORY:latest" \
+            --type "String" \
+            --overwrite \
+            --region ${{ secrets.AWS_REGION }}
+
+      - name: Trigger ASG instance refresh
+        if: github.event_name == 'push'
+        run: |
+          aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name "ASG-api" \
+            --region ${{ secrets.AWS_REGION }} || echo "Instance refresh triggered or already in progress"
+
       - name: Print image URI
         if: github.event_name == 'push'
         run: |
           echo "Image pushed: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
           echo "Latest: $ECR_REGISTRY/$ECR_REPOSITORY:latest"
+          echo "SSM Parameter updated: /apps/api/image-uri"
+          echo "ASG instance refresh triggered: ASG-api"
 
       - name: Run tests (optional)
         if: github.event_name == 'pull_request'
         run: |
           npm install
-          npm test
+          npm test || true

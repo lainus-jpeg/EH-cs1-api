@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
-const sql = require('mssql');
+const { Pool } = require('pg');
 const http = require('http');
 const socketIo = require('socket.io');
 const axios = require('axios');
@@ -49,33 +49,27 @@ app.use(cors({
 app.use(express.json());
 
 // Database configuration
-const config = {
-  server: process.env.DB_SERVER,
+const pool = new Pool({
+  host: process.env.DB_SERVER,
+  port: 5432,
   database: process.env.DB_NAME,
-  authentication: {
-    type: 'default',
-    options: {
-      userName: process.env.DB_USER,
-      password: process.env.DB_PASSWORD
-    }
-  },
-  options: {
-    encrypt: true,
-    trustServerCertificate: false,
-    connectTimeout: 30000,
-    requestTimeout: 30000
-  }
-};
-
-// Create connection pool
-const pool = new sql.ConnectionPool(config);
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 30000,
+});
 
 // Connect to database
-pool.connect((err) => {
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle client', err);
+});
+
+pool.query('SELECT NOW()', (err, result) => {
   if (err) {
     console.error('Database connection error:', err);
   } else {
-    console.log('Connected to Azure SQL Database');
+    console.log('Connected to PostgreSQL Database');
     // Create tables on startup
     createTables();
   }
@@ -84,32 +78,24 @@ pool.connect((err) => {
 // Create necessary tables
 async function createTables() {
   try {
-    const request = pool.request();
-    
     // Create Users table if it doesn't exist
-    await request.query(`
-      IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'Users')
-      BEGIN
-        CREATE TABLE Users (
-          Id INT IDENTITY(1,1) PRIMARY KEY,
-          Name NVARCHAR(255) NOT NULL,
-          Email NVARCHAR(255) NOT NULL UNIQUE,
-          Phone NVARCHAR(20),
-          Password NVARCHAR(255) NOT NULL
-        );
-      END
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        phone VARCHAR(20),
+        password VARCHAR(255) NOT NULL
+      )
     `);
     
     // Create NewsletterEmails table if it doesn't exist
-    await request.query(`
-      IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'NewsletterEmails')
-      BEGIN
-        CREATE TABLE NewsletterEmails (
-          Id INT IDENTITY(1,1) PRIMARY KEY,
-          Email NVARCHAR(255) NOT NULL UNIQUE,
-          CreatedAt DATETIME DEFAULT GETDATE()
-        );
-      END
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS newsletter_emails (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
     `);
     
     console.log('Tables created or already exist');
@@ -132,25 +118,20 @@ app.post('/v1/auth/register', async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Insert into database
-    const request = pool.request();
     const query = `
-      INSERT INTO Users (Name, Email, Phone, Password)
-      VALUES (@name, @email, @phone, @password)
+      INSERT INTO users (name, email, phone, password)
+      VALUES ($1, $2, $3, $4)
+      RETURNING id
     `;
 
-    request.input('name', sql.NVarChar, name);
-    request.input('email', sql.NVarChar, email);
-    request.input('phone', sql.NVarChar, phone);
-    request.input('password', sql.NVarChar, hashedPassword);
-
-    await request.query(query);
+    await pool.query(query, [name, email, phone, hashedPassword]);
 
     res.status(201).json({ success: true, message: 'User registered successfully' });
   } catch (err) {
     console.error('Registration error:', err);
     
-    // Check for duplicate email
-    if (err.originalError && err.originalError.info && err.originalError.info.number === 2627) {
+    // Check for duplicate email (PostgreSQL unique constraint violation)
+    if (err.code === '23505') {
       return res.status(400).json({ error: 'Email already exists' });
     }
 
@@ -174,20 +155,17 @@ app.post('/v1/auth/login', async (req, res) => {
     }
 
     // Find user by email
-    const request = pool.request();
-    const query = `SELECT Id, Name, Email, Password FROM Users WHERE Email = @email`;
-    request.input('email', sql.NVarChar, email);
+    const query = `SELECT id, name, password FROM users WHERE email = $1`;
+    const result = await pool.query(query, [email]);
 
-    const result = await request.query(query);
-
-    if (result.recordset.length === 0) {
+    if (result.rows.length === 0) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    const user = result.recordset[0];
+    const user = result.rows[0];
 
     // Compare passwords
-    const passwordMatch = await bcrypt.compare(password, user.Password);
+    const passwordMatch = await bcrypt.compare(password, user.password);
 
     if (!passwordMatch) {
       return res.status(401).json({ error: 'Invalid email or password' });
@@ -197,8 +175,8 @@ app.post('/v1/auth/login', async (req, res) => {
     res.json({ 
       success: true, 
       message: 'Login successful',
-      userId: user.Id,
-      name: user.Name
+      userId: user.id,
+      name: user.name
     });
   } catch (err) {
     console.error('Login error:', err);
@@ -273,11 +251,9 @@ app.post('/v1/newsletter-signup', async (req, res) => {
   if (!email) return res.status(400).json({ error: 'Email is required' });
 
   try {
-    const request = pool.request();
-    const query = `INSERT INTO NewsletterEmails (Email) VALUES (@email)`;
-    request.input('email', sql.NVarChar, email);
+    const query = `INSERT INTO newsletter_emails (email) VALUES ($1)`;
     
-    await request.query(query);
+    await pool.query(query, [email]);
     
     // Emit live update to all connected clients
     io.emit('newsletter-signup', { email, timestamp: new Date() });
@@ -299,8 +275,8 @@ app.post('/v1/newsletter-signup', async (req, res) => {
   } catch (err) {
     console.error('Newsletter signup error:', err);
     
-    // Check for duplicate email
-    if (err.originalError && err.originalError.info && err.originalError.info.number === 2627) {
+    // Check for duplicate email (PostgreSQL unique constraint violation)
+    if (err.code === '23505') {
       return res.status(400).json({ error: 'Email already subscribed' });
     }
     
@@ -313,13 +289,12 @@ app.post('/v1/newsletter-signup', async (req, res) => {
 // =========================
 app.get('/v1/newsletter-emails', async (req, res) => {
   try {
-    const request = pool.request();
-    const result = await request.query(`SELECT Email FROM NewsletterEmails ORDER BY Email`);
+    const result = await pool.query(`SELECT email FROM newsletter_emails ORDER BY email`);
     
     res.json({
       success: true,
-      count: result.recordset.length,
-      emails: result.recordset.map(row => row.Email)
+      count: result.rows.length,
+      emails: result.rows.map(row => row.email)
     });
   } catch (err) {
     console.error('Error fetching newsletter emails:', err);
@@ -338,9 +313,8 @@ app.post('/v1/send-newsletter', async (req, res) => {
   }
 
   try {
-    const request = pool.request();
-    const result = await request.query(`SELECT Email FROM NewsletterEmails`);
-    const emails = result.recordset.map(row => row.Email);
+    const result = await pool.query(`SELECT email FROM newsletter_emails`);
+    const emails = result.rows.map(row => row.email);
 
     if (emails.length === 0) {
       return res.status(400).json({ error: 'No subscribers found' });

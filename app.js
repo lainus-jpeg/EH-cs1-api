@@ -71,8 +71,13 @@ pool.on('error', (err) => {
 pool.query('SELECT NOW()', (err, result) => {
   if (err) {
     console.error('Database connection error:', err);
+    console.error('DB_SERVER:', process.env.DB_SERVER);
+    console.error('DB_NAME:', process.env.DB_NAME);
+    console.error('DB_USER:', process.env.DB_USER);
   } else {
-    console.log('Connected to PostgreSQL Database');
+    console.log('✅ Connected to PostgreSQL Database');
+    console.log('Database Host:', process.env.DB_SERVER);
+    console.log('Database Name:', process.env.DB_NAME);
     // Create tables on startup
     createTables();
   }
@@ -254,13 +259,22 @@ app.post('/v1/newsletter-signup', async (req, res) => {
   if (!email) return res.status(400).json({ error: 'Email is required' });
 
   try {
-    const query = `INSERT INTO newsletter_emails (email) VALUES ($1)`;
+    // Ensure table exists before inserting
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS newsletter_emails (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
     
-    await pool.query(query, [email]);
+    const query = `INSERT INTO newsletter_emails (email) VALUES ($1) RETURNING id`;
+    
+    const result = await pool.query(query, [email]);
+    console.log(`✅ Newsletter signup saved (ID: ${result.rows[0].id}): ${email}`);
     
     // Emit live update to all connected clients
     io.emit('newsletter-signup', { email, timestamp: new Date() });
-    console.log(`📬 New newsletter signup: ${email}`);
 
     // Send to Discord webhook if configured
     if (process.env.WEBHOOK_URL) {
@@ -276,14 +290,15 @@ app.post('/v1/newsletter-signup', async (req, res) => {
     
     res.status(200).json({ success: true, message: 'Email saved' });
   } catch (err) {
-    console.error('Newsletter signup error:', err);
+    console.error('❌ Newsletter signup error:', err);
+    console.error('Error details:', err.message, err.code);
     
     // Check for duplicate email (PostgreSQL unique constraint violation)
     if (err.code === '23505') {
       return res.status(400).json({ error: 'Email already subscribed' });
     }
     
-    res.status(500).json({ error: 'Error saving email' });
+    res.status(500).json({ error: 'Error saving email: ' + err.message });
   }
 });
 

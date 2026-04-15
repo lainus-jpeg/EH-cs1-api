@@ -106,6 +106,23 @@ async function createTables() {
       )
     `);
     
+    // Create Failed Login Attempts table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS failed_login_attempts (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(255) NOT NULL,
+        ip_address VARCHAR(45),
+        attempt_time TIMESTAMP DEFAULT NOW(),
+        FOREIGN KEY (email) REFERENCES users(email) ON DELETE CASCADE
+      )
+    `);
+    
+    // Create index for faster lookups
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_failed_login_email_time 
+      ON failed_login_attempts(email, attempt_time DESC)
+    `);
+    
     console.log('Tables created or already exist');
   } catch (err) {
     console.error('Error creating tables:', err);
@@ -151,11 +168,103 @@ app.post('/v1/auth/register', async (req, res) => {
 app.get('/v1/health', (req, res) => {
   res.json({ status: 'OK' });
 });
+// Helper function to trigger SOAR alerts
+async function triggerSOARAlert(alertName, description, severity = 'warning', metadata = {}) {
+  try {
+    const soarWebhookUrl = process.env.SOAR_WEBHOOK_URL;
+    if (!soarWebhookUrl) {
+      console.warn('SOAR_WEBHOOK_URL not configured, skipping SOAR alert');
+      return;
+    }
 
+    const alertPayload = {
+      alerts: [
+        {
+          status: 'firing',
+          labels: {
+            alertname: alertName,
+            severity: severity,
+            source: 'application'
+          },
+          annotations: {
+            summary: description,
+            description: description,
+            details: JSON.stringify(metadata)
+          }
+        }
+      ]
+    };
+
+    await axios.post(soarWebhookUrl, alertPayload, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 5000
+    });
+
+    console.log(`SOAR alert triggered: ${alertName}`);
+  } catch (err) {
+    console.error('Error triggering SOAR alert:', err.message);
+  }
+}
+
+// Helper function to check failed login attempts
+async function checkFailedLoginAttempts(email, ipAddress) {
+  try {
+    // Record this failed attempt
+    await pool.query(
+      'INSERT INTO failed_login_attempts (email, ip_address) VALUES ($1, $2)',
+      [email, ipAddress]
+    );
+
+    // Count failed attempts in last 15 minutes
+    const result = await pool.query(
+      `SELECT COUNT(*) as count FROM failed_login_attempts 
+       WHERE email = $1 AND attempt_time > NOW() - INTERVAL '15 minutes'`,
+      [email]
+    );
+
+    const failedAttempts = parseInt(result.rows[0].count, 10);
+
+    // Trigger SOAR alert if threshold exceeded
+    if (failedAttempts >= 5) {
+      await triggerSOARAlert(
+        'ExcessiveFailedLoginAttempts',
+        `Excessive failed login attempts detected for ${email}`,
+        'critical',
+        {
+          email: email,
+          failedAttempts: failedAttempts,
+          timeWindow: '15 minutes',
+          ipAddress: ipAddress
+        }
+      );
+
+      console.warn(`ALERT: ${failedAttempts} failed login attempts for ${email}`);
+    } else if (failedAttempts >= 3) {
+      // Warning level at 3 attempts
+      await triggerSOARAlert(
+        'FailedLoginAttempts',
+        `Multiple failed login attempts for ${email} (${failedAttempts}/5)`,
+        'warning',
+        {
+          email: email,
+          failedAttempts: failedAttempts,
+          timeWindow: '15 minutes',
+          ipAddress: ipAddress
+        }
+      );
+    }
+
+    return failedAttempts;
+  } catch (err) {
+    console.error('Error checking failed login attempts:', err);
+    return 0;
+  }
+}
 // Login endpoint
 app.post('/v1/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
+    const ipAddress = req.ip || req.connection.remoteAddress;
 
     // Validation
     if (!email || !password) {
@@ -167,6 +276,8 @@ app.post('/v1/auth/login', async (req, res) => {
     const result = await pool.query(query, [email]);
 
     if (result.rows.length === 0) {
+      // Track failed attempt for non-existent email too
+      await checkFailedLoginAttempts(email, ipAddress);
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
@@ -176,10 +287,21 @@ app.post('/v1/auth/login', async (req, res) => {
     const passwordMatch = await bcrypt.compare(password, user.password);
 
     if (!passwordMatch) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+      // Track failed login attempt
+      const failedCount = await checkFailedLoginAttempts(email, ipAddress);
+      
+      return res.status(401).json({ 
+        error: 'Invalid email or password',
+        failedAttempts: failedCount
+      });
     }
 
-    // Login successful
+    // Login successful - clear failed attempts
+    await pool.query(
+      'DELETE FROM failed_login_attempts WHERE email = $1 AND attempt_time > NOW() - INTERVAL \'15 minutes\'',
+      [email]
+    );
+
     res.json({ 
       success: true, 
       message: 'Login successful',

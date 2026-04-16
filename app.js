@@ -268,11 +268,22 @@ async function checkFailedLoginAttempts(email, ipAddress) {
     return 0;
   }
 }
+// Helper function to extract client IP
+function getClientIp(req) {
+  // Check X-Forwarded-For header (ALB/proxy)
+  const forwarded = req.headers['x-forwarded-for'];
+  if (forwarded) {
+    return forwarded.split(',')[0].trim();
+  }
+  // Fall back to direct connection
+  return req.ip || req.connection.remoteAddress || 'unknown';
+}
+
 // Login endpoint
 app.post('/v1/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    const ipAddress = req.ip || req.connection.remoteAddress;
+    const ipAddress = getClientIp(req);
 
     // Validation
     if (!email || !password) {

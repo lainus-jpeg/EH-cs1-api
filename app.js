@@ -177,15 +177,23 @@ async function triggerSOARAlert(alertName, description, severity = 'warning', me
       return;
     }
 
+    // Build labels, including source_ip if provided
+    const labels = {
+      alertname: alertName,
+      severity: severity,
+      source: 'application'
+    };
+
+    // Add source IP to labels if available
+    if (metadata.ipAddress) {
+      labels.source_ip = metadata.ipAddress;
+    }
+
     const alertPayload = {
       alerts: [
         {
           status: 'firing',
-          labels: {
-            alertname: alertName,
-            severity: severity,
-            source: 'application'
-          },
+          labels: labels,
           annotations: {
             summary: description,
             description: description,
